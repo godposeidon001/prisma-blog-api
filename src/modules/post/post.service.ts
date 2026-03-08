@@ -1,4 +1,5 @@
 import { Prisma } from "../../../generated/prisma/client";
+import type { SortByField, SortOrderValue } from "../../helpers/PaginationSorting";
 import { prisma } from "../../lib/prisma";
 
 type CreatePostPayload = Omit<
@@ -16,6 +17,10 @@ type PostFilters = {
   featured?: boolean;
   authorId?: string;
   status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  limit?: number;
+  skip?: number;
+  sortBy?: SortByField;
+  sortOrder?: SortOrderValue;
 };
 
 const createPost = async (data: CreatePostPayload, user?: AuthUser) => {
@@ -34,7 +39,7 @@ const createPost = async (data: CreatePostPayload, user?: AuthUser) => {
 };
 
 const getAllPosts = async (filters: PostFilters = {}) => {
-  const { search, tags = [], featured, authorId, status } = filters;
+  const { search, tags = [], featured, authorId, status, limit, skip, sortBy, sortOrder } = filters;
   const andFilters: Prisma.PostWhereInput[] = [];
 
   if (search) {
@@ -82,8 +87,17 @@ const getAllPosts = async (filters: PostFilters = {}) => {
     });
   }
 
+  const orderBy: Prisma.PostOrderByWithRelationInput = sortBy
+    ? ({
+        [sortBy]: sortOrder ?? "desc",
+      } as Prisma.PostOrderByWithRelationInput)
+    : { createdAt: "desc" };
+
   const result = await prisma.post.findMany({
     where: andFilters.length > 0 ? { AND: andFilters } : {},
+    orderBy,
+    ...(limit !== undefined ? { take: limit } : {}),
+    ...(skip !== undefined ? { skip } : {}),
   });
   return result;
 };

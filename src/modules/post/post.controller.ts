@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { parsePaginationSorting } from "../../helpers/PaginationSorting";
 import { postService } from "./post.service";
 
 const VALID_POST_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
@@ -71,7 +72,11 @@ const getAllPosts = async (req: Request, res: Response) => {
       featured?: boolean;
       authorId?: string;
       status?: PostStatusValue;
-    } = { tags };
+      limit: number;
+      skip: number;
+      sortBy: "createdAt" | "updatedAt" | "title" | "views";
+      sortOrder: "asc" | "desc";
+    } = { tags, limit: 10, skip: 0, sortBy: "createdAt", sortOrder: "desc" };
 
     if (search !== undefined) {
       filters.search = search;
@@ -85,6 +90,18 @@ const getAllPosts = async (req: Request, res: Response) => {
     if (status !== undefined) {
       filters.status = status;
     }
+
+    const paginationSortingResult = parsePaginationSorting(req.query);
+    if (!paginationSortingResult.ok) {
+      return res.status(400).json({
+        error: paginationSortingResult.error,
+      });
+    }
+
+    filters.limit = paginationSortingResult.data.limit;
+    filters.skip = paginationSortingResult.data.skip;
+    filters.sortBy = paginationSortingResult.data.sortBy;
+    filters.sortOrder = paginationSortingResult.data.sortOrder;
 
     const result = await postService.getAllPosts(filters);
     res.status(200).json(result);
