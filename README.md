@@ -1,77 +1,85 @@
 # Prisma Blog API
 
-A TypeScript + Express backend for a blog platform using Prisma (PostgreSQL) and Better Auth.
+TypeScript + Express backend for a blog API using Prisma (PostgreSQL) and Better Auth.
 
-## Features
-
-- Email/password authentication with email verification
-- Google social login support
-- Role-aware auth middleware (`user`, `admin`)
-- Post creation for authenticated users
-- Post listing with combined filtering:
-  - `search` (title/content, case-insensitive)
-  - `tags` (any match)
-  - `isFeatured` (`true` or `false`)
-  - `authorId`
-  - `status` (`DRAFT`, `PUBLISHED`, `ARCHIVED`)
-
-## Tech Stack
+## Stack
 
 - Node.js
 - TypeScript
 - Express 5
-- Prisma 7 + PostgreSQL adapter (`@prisma/adapter-pg`)
+- Prisma 7 (`@prisma/client`, `@prisma/adapter-pg`)
 - Better Auth
 - Nodemailer
+
+## Features
+
+- Better Auth integration at `/api/auth/*`
+- Email/password auth with email verification required
+- Google social provider support
+- Post creation (authenticated users only)
+- Post listing with:
+  - search
+  - tags filter
+  - featured filter
+  - author filter
+  - status filter
+  - pagination
+  - sorting
+- Get post by ID with automatic `views` increment
 
 ## Project Structure
 
 ```txt
 src/
-  app.ts                         # Express app and route registration
-  server.ts                      # App bootstrap and DB connection
+  app.ts
+  server.ts
+  helpers/
+    PaginationSorting.ts
   lib/
-    prisma.ts                    # Prisma client setup
-    auth.ts                      # Better Auth configuration
+    prisma.ts
+    auth.ts
   middleware/
-    auth.middleware.ts           # Session/role middleware and req.user
+    auth.middleware.ts
   modules/
     post/
-      post.router.ts             # /posts routes
-      post.controller.ts         # request parsing/validation
-      post.service.ts            # Prisma query logic
-  email/
-    verificationEmail.ts         # email template
+      post.router.ts
+      post.controller.ts
+      post.service.ts
+  scripts/
+    seedAdmin.ts
+    seedPosts.ts
 prisma/
-  schema.prisma                  # DB schema
-  migrations/                    # Prisma migrations
-generated/prisma/                # Generated Prisma client output
+  schema.prisma
+  migrations/
+generated/prisma/
 ```
-
-## Prerequisites
-
-- Node.js 18+
-- PostgreSQL database
 
 ## Environment Variables
 
-Create a `.env` file in project root:
+Create `.env` in project root:
 
 ```env
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB_NAME
 PORT=3000
 APP_URL=http://localhost:3000
+
 APP_USER=your_smtp_email
 APP_PASS=your_smtp_app_password
+
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+ADMIN_NAME=Admin Name
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=strongpassword
 ```
 
 Notes:
-- `APP_URL` is used for CORS and email verification link generation.
-- SMTP values are used by Nodemailer for verification emails.
+- `APP_URL` is used for CORS and verification links.
+- `APP_USER`/`APP_PASS` are used to send verification email.
+- `ADMIN_*` vars are required by the admin seed script.
 
-## Installation & Run
+## Install & Run
 
 ```bash
 npm install
@@ -80,101 +88,118 @@ npx prisma generate
 npm run dev
 ```
 
-Server default: `http://localhost:3000`
+Server runs on `PORT` (default `3000`).
+
+## Scripts
+
+- `npm run dev` -> start server with `tsx watch`
+- `npm run seed:admin` -> creates an admin user via auth API
+- `npm run seed:posts` -> inserts 30 posts
+- `npm test` -> placeholder
 
 ## API
 
 ### Health
 
-- `GET /`
-  - Response: `"Hello, World!"`
+- `GET /` -> `"Hello, World!"`
 
 ### Auth
 
 - Base path: `/api/auth/*`
-- All auth endpoints are handled by Better Auth via `toNodeHandler(auth)`.
-- Examples include sign-up, sign-in, session, email verification, and social login callbacks.
+- Routed through Better Auth node handler.
 
 ### Posts
 
 Base path: `/posts`
 
-#### Create Post
+#### `GET /posts`
 
-- `POST /posts`
-- Protected: requires authenticated + email-verified user (`UserRole.USER`)
-- Body (example):
+Returns:
 
 ```json
 {
-  "title": "My first post",
+  "posts": [],
+  "pagination": {
+    "total": 0,
+    "page": 1,
+    "limit": 10,
+    "totalPages": 0
+  }
+}
+```
+
+Query params:
+- `search=...` -> title/content contains (case-insensitive)
+- `tags=next,web` or repeated `tags=next&tags=web` -> any tag match (`hasSome`)
+- `isFeatured=true|false`
+- `authorId=<user-id>`
+- `status=DRAFT|PUBLISHED|ARCHIVED` (case-insensitive input)
+- `page=<positive integer>` default `1`
+- `limit=<1..100>` default `10`
+- `sortBy=createdAt|updatedAt|title|views` default `createdAt`
+- `sortOrder=asc|desc` default `desc`
+
+Validation:
+- Invalid `isFeatured`, `status`, `page`, `limit`, `sortBy`, or `sortOrder` returns `400`.
+
+Example:
+
+```http
+GET /posts?search=prisma&tags=api,backend&isFeatured=true&authorId=user_123&status=PUBLISHED&page=2&limit=5&sortBy=views&sortOrder=desc
+```
+
+#### `GET /posts/:id`
+
+- Returns post by ID.
+- Increments `views` by `1` each successful fetch.
+- Returns `400` for invalid ID.
+- Returns `404` if post does not exist.
+
+#### `POST /posts`
+
+- Protected route (`isAuthUserPayload(UserRole.USER)`).
+- Requires authenticated and email-verified user.
+- `authorId` is taken from `req.user.id` in service.
+
+Example body:
+
+```json
+{
+  "title": "My post",
   "content": "Post content",
-  "thumbnail": "https://example.com/image.jpg",
+  "thumbnail": "https://example.com/img.jpg",
   "isFeatured": false,
   "status": "PUBLISHED",
-  "tags": ["next", "web"],
+  "tags": ["node", "prisma"],
   "views": 0
 }
 ```
 
-Behavior:
-- `authorId` is injected from `req.user.id` in service.
-- Returns `401` when unauthorized.
+## Seed Scripts
 
-#### Get Posts (with filters)
+### `seed:admin`
 
-- `GET /posts`
-- Query params:
-  - `search=keyword`
-  - `tags=next,web,php` or repeated `tags=next&tags=web`
-  - `isFeatured=true|false` (strict)
-  - `authorId=<userId>`
-  - `status=DRAFT|PUBLISHED|ARCHIVED` (case-insensitive input accepted)
+Creates admin user by calling:
+- `POST http://localhost:3000/api/auth/sign-up/email`
 
-Examples:
+Important:
+- Server should be running before this script.
+- Requires `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
 
-```http
-GET /posts
-GET /posts?search=prisma
-GET /posts?tags=next,web
-GET /posts?isFeatured=true
-GET /posts?authorId=user_123
-GET /posts?status=published
-GET /posts?search=api&tags=next,web&isFeatured=false&authorId=user_123&status=ARCHIVED
-```
+### `seed:posts`
 
-Validation behavior:
-- Invalid `isFeatured` (e.g. `tru`) -> `400`
-- Invalid `status` (e.g. `publishd`) -> `400`
-
-## Filtering Logic
-
-Filters are combined with `AND` in Prisma:
-
-- `search`: matches `title` OR `content` using `contains` (case-insensitive)
-- `tags`: uses `hasSome` (returns posts containing any provided tag)
-- `isFeatured`: exact boolean match
-- `authorId`: exact match
-- `status`: enum match
-
-## Available Scripts
-
-- `npm run dev` - run server in watch mode using `tsx`
-- `npm test` - placeholder script
+- Creates 30 posts.
+- Uses existing user IDs as authors when available.
+- If no users exist, falls back to placeholder author IDs.
 
 ## Database
 
-Schema is defined in `prisma/schema.prisma`.
+Schema is in `prisma/schema.prisma`.
 
-Main blog model:
-- `Post` with `status`, `isFeatured`, `tags`, and `authorId`
-
-Auth-related models are also present:
-- `User`, `Session`, `Account`, `Verification`
-
-## Current Notes
-
-- CORS is configured with `origin: APP_URL` and `credentials: true`.
-- Prisma client output is configured to `generated/prisma`.
-- TypeScript is strict (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`).
-
+Main models used now:
+- `Post`
+- `User`
+- `Session`
+- `Account`
+- `Verification`
+- `Comment`

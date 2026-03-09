@@ -19,6 +19,7 @@ type PostFilters = {
   status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   limit?: number;
   skip?: number;
+  page?: number;
   sortBy?: SortByField;
   sortOrder?: SortOrderValue;
 };
@@ -39,8 +40,10 @@ const createPost = async (data: CreatePostPayload, user?: AuthUser) => {
 };
 
 const getAllPosts = async (filters: PostFilters = {}) => {
-  const { search, tags = [], featured, authorId, status, limit, skip, sortBy, sortOrder } = filters;
+  const { search, tags = [], featured, authorId, status, limit, skip, page, sortBy, sortOrder } = filters;
   const andFilters: Prisma.PostWhereInput[] = [];
+  const currentPage = page ?? 1;
+  const currentLimit = limit ?? 10;
 
   if (search) {
     andFilters.push({
@@ -99,10 +102,47 @@ const getAllPosts = async (filters: PostFilters = {}) => {
     ...(limit !== undefined ? { take: limit } : {}),
     ...(skip !== undefined ? { skip } : {}),
   });
+  //return result;
+
+  const count = await prisma.post.count({
+    where: andFilters.length > 0 ? { AND: andFilters } : {},
+  });
+  
+  return {
+    posts: result,
+    pagination:{
+      total: count,
+      page: currentPage,
+      limit: currentLimit,
+      totalPages: Math.ceil(count / currentLimit),
+    }
+  };
+};
+
+const getPostById = async (id: string) => {
+  const existingPost = await prisma.post.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!existingPost) {
+    return null;
+  }
+
+  const result = await prisma.post.update({
+    where: { id },
+    data: {
+      views: {
+        increment: 1,
+      },
+    },
+  });
+
   return result;
 };
 
 export const postService = {
   createPost,
   getAllPosts,
+  getPostById,
 };

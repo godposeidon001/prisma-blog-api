@@ -5,6 +5,15 @@ import { postService } from "./post.service";
 const VALID_POST_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
 type PostStatusValue = (typeof VALID_POST_STATUSES)[number];
 
+const getSingleQueryValue = (value: unknown): string | undefined => {
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : undefined;
+  }
+
+  return typeof value === "string" ? value : undefined;
+};
+
 const getAllPosts = async (req: Request, res: Response) => {
   try {
     const search =
@@ -46,8 +55,8 @@ const getAllPosts = async (req: Request, res: Response) => {
       }
     }
 
-    const authorId =
-      typeof req.query.authorId === "string" ? req.query.authorId.trim() : undefined;
+    const authorIdValue = getSingleQueryValue(req.query.authorId);
+    const authorId = authorIdValue ? authorIdValue.trim() : undefined;
 
     let status: PostStatusValue | undefined;
     const hasStatus = Object.prototype.hasOwnProperty.call(req.query, "status");
@@ -74,6 +83,7 @@ const getAllPosts = async (req: Request, res: Response) => {
       status?: PostStatusValue;
       limit: number;
       skip: number;
+      page?: number;
       sortBy: "createdAt" | "updatedAt" | "title" | "views";
       sortOrder: "asc" | "desc";
     } = { tags, limit: 10, skip: 0, sortBy: "createdAt", sortOrder: "desc" };
@@ -102,11 +112,33 @@ const getAllPosts = async (req: Request, res: Response) => {
     filters.skip = paginationSortingResult.data.skip;
     filters.sortBy = paginationSortingResult.data.sortBy;
     filters.sortOrder = paginationSortingResult.data.sortOrder;
+    filters.page = paginationSortingResult.data.page;
 
     const result = await postService.getAllPosts(filters);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch posts" });
+  }
+};
+
+const getPostById = async (req: Request, res: Response) => {
+  try {
+    const idValue = req.params.id;
+    const id = Array.isArray(idValue) ? idValue[0] : idValue;
+
+    if (!id || typeof id !== "string" || id.trim().length === 0) {
+      return res.status(400).json({ error: "Invalid post id" });
+    }
+
+    const result = await postService.getPostById(id);
+
+    if (!result) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch post" });
   }
 };
 
@@ -126,4 +158,5 @@ const createPost = async (req: Request, res: Response) => {
 export const postController = {
   createPost,
   getAllPosts,
+  getPostById,
 };
