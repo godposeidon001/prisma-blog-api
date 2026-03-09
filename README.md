@@ -26,6 +26,9 @@ TypeScript + Express backend for a blog API using Prisma (PostgreSQL) and Better
   - pagination
   - sorting
 - Get post by ID with automatic `views` increment
+- Comment module with create/read/update/delete
+- Comment ownership checks for update/delete
+- Comments by author endpoint
 
 ## Project Structure
 
@@ -45,6 +48,10 @@ src/
       post.router.ts
       post.controller.ts
       post.service.ts
+    comment/
+      comment.router.ts
+      comment.controller.ts
+      comment.service.ts
   scripts/
     seedAdmin.ts
     seedPosts.ts
@@ -128,6 +135,8 @@ Returns:
 }
 ```
 
+Each post includes `_count.comments`.
+
 Query params:
 - `search=...` -> title/content contains (case-insensitive)
 - `tags=next,web` or repeated `tags=next&tags=web` -> any tag match (`hasSome`)
@@ -152,6 +161,8 @@ GET /posts?search=prisma&tags=api,backend&isFeatured=true&authorId=user_123&stat
 
 - Returns post by ID.
 - Increments `views` by `1` each successful fetch.
+- Includes top-level comments (`parentId = null`) with nested replies.
+- Comment/reply order is chronological (`createdAt asc`).
 - Returns `400` for invalid ID.
 - Returns `404` if post does not exist.
 
@@ -174,6 +185,76 @@ Example body:
   "views": 0
 }
 ```
+
+### Comments
+
+Base path: `/comments`
+
+#### `POST /comments`
+
+- Protected route (`USER` or `ADMIN`).
+- Creates a comment or reply.
+- Body:
+
+```json
+{
+  "content": "Nice post!",
+  "postId": "post_uuid",
+  "parentId": "optional_parent_comment_id"
+}
+```
+
+Validation/error behavior:
+- `401` Unauthorized
+- `404` Post not found
+- `404` Parent comment not found
+- `400` Parent comment does not belong to this post
+
+#### `GET /comments/:id`
+
+- Returns one comment by ID.
+- Includes:
+  - `post.id`, `post.title`, `post.views`
+  - `replies` (ordered by `createdAt asc`)
+- Returns `400` for invalid ID.
+- Returns `404` if comment not found.
+
+#### `GET /comments/author/:authorId`
+
+- Returns all comments for a given author.
+- Each comment includes `post.id` and `post.title`.
+- Ordered by `createdAt desc`.
+- Returns `400` for invalid author ID.
+
+#### `PATCH /comments/:id`
+
+- Protected route (`USER` or `ADMIN`).
+- Updates comment content.
+- Body:
+
+```json
+{
+  "content": "Updated comment text"
+}
+```
+
+Validation/error behavior:
+- `400` Invalid comment ID
+- `400` Content is required
+- `401` Unauthorized
+- `403` Forbidden (not owner)
+- `404` Comment not found
+
+#### `DELETE /comments/:id`
+
+- Protected route (`USER` or `ADMIN`).
+- Only comment owner can delete.
+
+Validation/error behavior:
+- `400` Invalid comment ID
+- `401` Unauthorized
+- `403` Forbidden (not owner)
+- `404` Comment not found
 
 ## Seed Scripts
 

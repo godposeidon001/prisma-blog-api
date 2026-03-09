@@ -101,6 +101,13 @@ const getAllPosts = async (filters: PostFilters = {}) => {
     orderBy,
     ...(limit !== undefined ? { take: limit } : {}),
     ...(skip !== undefined ? { skip } : {}),
+    include: {
+      _count: {
+        select: {
+          comments: true,
+        },
+      },
+    },
   });
   //return result;
 
@@ -120,25 +127,50 @@ const getAllPosts = async (filters: PostFilters = {}) => {
 };
 
 const getPostById = async (id: string) => {
-  const existingPost = await prisma.post.findUnique({
-    where: { id },
-    select: { id: true },
-  });
-
-  if (!existingPost) {
-    return null;
-  }
-
-  const result = await prisma.post.update({
-    where: { id },
-    data: {
-      views: {
-        increment: 1,
+  try {
+    const result = await prisma.post.update({
+      where: { id },
+      data: {
+        views: {
+          increment: 1,
+        },
       },
-    },
-  });
+      include: {
+        comments: {
+          where: {
+            parentId: null,
+          },
+          orderBy: {
+            createdAt: "asc",
+          },
+          include: {
+            replies: {
+              orderBy: {
+                createdAt: "asc",
+              },
+              include: {
+                replies: {
+                  orderBy: {
+                    createdAt: "asc",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
 
-  return result;
+    return result;
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 };
 
 export const postService = {
