@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { commentService } from "./comment.service";
 
+const VALID_COMMENT_STATUSES = ["APPROVED", "REJECTED"] as const;
+type CommentStatusValue = (typeof VALID_COMMENT_STATUSES)[number];
+
 const createComment = async (req: Request, res: Response) => {
   try {
     const result = await commentService.createComment(req.body, req.user);
@@ -131,10 +134,58 @@ const updateCommentById = async (req: Request, res: Response) => {
   }
 };
 
+const moderateComment = async (req: Request, res: Response) => {
+  try {
+    const idValue = req.params.id;
+    const id = Array.isArray(idValue) ? idValue[0] : idValue;
+
+    if (!id || typeof id !== "string" || id.trim().length === 0) {
+      return res.status(400).json({ error: "Invalid comment id" });
+    }
+
+    const rawStatus = req.body?.status;
+    const normalizedStatus = String(rawStatus).toUpperCase() as CommentStatusValue;
+
+    if (!VALID_COMMENT_STATUSES.includes(normalizedStatus)) {
+      return res.status(400).json({
+        error: "Invalid status value. Use status=APPROVED or status=REJECTED",
+      });
+    }
+
+    const result = await commentService.moderateComment(
+      id,
+      { status: normalizedStatus },
+      req.user,
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "Unauthorized") {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      if (error.message === "Forbidden") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (error.message === "Comment not found") {
+        return res.status(404).json({ error: "Comment not found" });
+      }
+
+      if (error.message === "Comment already has this status") {
+        return res.status(400).json({ error: "Comment already has this status" });
+      }
+    }
+
+    res.status(500).json({ error: "Failed to moderate comment" });
+  }
+};
+
 export const commentController = {
   createComment,
   getCommentById,
   getCommentByAuthorId,
   deleteComment,
   updateCommentById,
+  moderateComment,
 };

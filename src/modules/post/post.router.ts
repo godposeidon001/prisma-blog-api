@@ -5,6 +5,7 @@ import isAuthUserPayload, { UserRole } from "../../middleware/auth.middleware";
 const router = express.Router();
 
 router.get("/", postController.getAllPosts);
+router.get("/me", isAuthUserPayload(UserRole.USER, UserRole.ADMIN), postController.getMyPosts);
 
 router.get("/:id", postController.getPostById);
 

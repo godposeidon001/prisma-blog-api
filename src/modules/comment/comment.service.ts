@@ -2,6 +2,7 @@ import { prisma } from "../../lib/prisma";
 
 type AuthUser = {
   id: string;
+  role?: "user" | "admin";
 };
 
 type CreateCommentPayload = {
@@ -12,6 +13,10 @@ type CreateCommentPayload = {
 
 type UpdateCommentPayload = {
   content: string;
+};
+
+type ModerateCommentPayload = {
+  status: "APPROVED" | "REJECTED";
 };
 
 const createComment = async (data: CreateCommentPayload, user?: AuthUser) => {
@@ -167,10 +172,50 @@ const updateCommentById = async (
   return result;
 };
 
+const moderateComment = async (
+  id: string,
+  data: ModerateCommentPayload,
+  user?: AuthUser,
+) => {
+  if (!user?.id) {
+    throw new Error("Unauthorized");
+  }
+
+  if (user.role !== "admin") {
+    throw new Error("Forbidden");
+  }
+
+  const existingComment = await prisma.comment.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
+
+  if (!existingComment) {
+    throw new Error("Comment not found");
+  }
+
+  if (existingComment.status === data.status) {
+    throw new Error("Comment already has this status");
+  }
+
+  const result = await prisma.comment.update({
+    where: { id },
+    data: {
+      status: data.status,
+    },
+  });
+
+  return result;
+};
+
 export const commentService = {
   createComment,
   getCommentById,
   getCommentByAuthorId,
   deleteComment,
   updateCommentById,
+  moderateComment,
 };
